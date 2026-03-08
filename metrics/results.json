@@ -1,14 +1,20 @@
 {
   "baseline": {
-    "MAE": 46.31,
-    "RMSE": 75.29
+    "MAE": 47.83,
+    "RMSE": 78.15,
+    "train_time_sec": 0,
+    "inference_time_sec": 0.092
   },
   "knn": {
-    "MAE": 29.25,
-    "RMSE": 50.86
+    "MAE": 24.04,
+    "RMSE": 32.99,
+    "train_time_sec": 0.002,
+    "inference_time_sec": 0.003
   },
   "mlp": {
-    "MAE": 27.21,
-    "RMSE": 51.89
+    "MAE": 20.85,
+    "RMSE": 30.62,
+    "train_time_sec": 2.321,
+    "inference_time_sec": 0.0
   }
 }
