@@ -1,0 +1,6 @@
+dbt_energy:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "energy.duckdb"

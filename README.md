@@ -108,12 +108,77 @@ Two separate checks run on every prediction:
 2. **Prediction check** - flags if the prediction deviates more than 20% from recent
    same-weekday historical values. Suppressed if special_event is true.
 
+## Stack
+
+Python, Pandas, Scikit-learn, FastAPI, Docker, Open-Meteo API, SHAP, dbt + DuckDB, PySpark
+
+## Architecture
+
+```
+data/raw/
+  opsd_germany_daily.csv   ← source energy data
+  weather_berlin.csv       ← temperature cache (fetched from Open-Meteo)
+        │
+        ▼
+┌──────────────────────────────────┐
+│  src/preprocess.py               │  pandas feature engineering
+│  src/train.py                    │  KNN · MLP · baseline → metrics/
+│  src/api.py                      │  FastAPI prediction endpoint
+└──────────────────────────────────┘
+        │
+        ├── src/explain.py          SHAP KernelExplainer → reports/
+        │
+        ├── dbt_energy/             dbt-duckdb (local DuckDB, no cloud)
+        │     seeds/                energy.csv · weather.csv
+        │     models/staging/       stg_energy · stg_weather (views)
+        │     models/marts/         fct_energy_features (table)
+        │                           lag_1 · lag_7 · rolling_7 · rolling_7_std
+        │
+        └── src/spark_features.py   PySpark replication of feature engineering
+                                    → data/processed/spark_features.parquet/
+```
+
+## SHAP explainability
+
+KNN has no built-in feature importance, so SHAP KernelExplainer is used (model-agnostic).
+Background: 100 random training samples. Explains 50 test-set predictions.
+
+**Summary plot** — feature importance across 50 test predictions:
+
+![SHAP summary](reports/shap_summary.png)
+
+**Waterfall plot** — contribution breakdown for a single prediction:
+
+![SHAP waterfall](reports/shap_waterfall.png)
+
 ## How to run
 
 **Train models:**
 ```bash
 pip install -r requirements.txt
 python3 src/train.py
+```
+
+**Generate SHAP plots:**
+```bash
+python3 src/explain.py
+# → reports/shap_summary.png, reports/shap_waterfall.png
+```
+
+**Run dbt pipeline (local DuckDB):**
+```bash
+pip install dbt-duckdb
+cd dbt_energy
+dbt seed --profiles-dir .
+dbt run  --profiles-dir .
+dbt test --profiles-dir .
+```
+
+**Run PySpark feature engineering:**
+```bash
+# requires Java 17+
+JAVA_HOME=/opt/homebrew/opt/openjdk@17 python3 src/spark_features.py
+# → data/processed/spark_features.parquet/
 ```
 
 **Run API locally:**
@@ -126,10 +191,6 @@ uvicorn src.api:app --reload
 docker build -t energy-forecaster .
 docker run -p 8000:8000 energy-forecaster
 ```
-
-## Stack
-
-Python, Pandas, Scikit-learn, FastAPI, Docker, Open-Meteo API
 
 ## Next steps
 

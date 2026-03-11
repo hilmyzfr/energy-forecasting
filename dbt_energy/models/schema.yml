@@ -1,0 +1,69 @@
+version: 2
+
+models:
+  - name: stg_energy
+    description: "Cleaned daily German energy consumption in GWh."
+    columns:
+      - name: date
+        description: "Calendar date (UTC)."
+        data_tests:
+          - not_null
+          - unique
+      - name: consumption_gwh
+        description: "Daily electricity consumption in GWh."
+        data_tests:
+          - not_null
+
+  - name: stg_weather
+    description: "Daily mean temperature for Berlin from Open-Meteo."
+    columns:
+      - name: date
+        description: "Calendar date."
+        data_tests:
+          - not_null
+          - unique
+      - name: temperature_c
+        description: "Mean daily temperature in Celsius."
+        data_tests:
+          - not_null
+
+  - name: fct_energy_features
+    description: >
+      Final feature table joining energy and weather with engineered features:
+      day-of-week, month, weekend flag, lag-1, lag-7, rolling 7-day avg/std.
+    columns:
+      - name: date
+        description: "Calendar date."
+        data_tests:
+          - not_null
+          - unique
+      - name: consumption_gwh
+        description: "Daily electricity consumption in GWh."
+        data_tests:
+          - not_null
+      - name: lag_1
+        description: "Consumption lagged by 1 day."
+        data_tests:
+          - not_null
+      - name: lag_7
+        description: "Consumption lagged by 7 days."
+        data_tests:
+          - not_null
+      - name: rolling_7_avg
+        description: "7-day rolling mean of consumption (shift-1 window)."
+        data_tests:
+          - not_null
+      - name: day_of_week
+        description: "Day of week (0=Monday, 6=Sunday)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6]
+      - name: is_weekend
+        description: "1 if Saturday or Sunday, else 0."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
