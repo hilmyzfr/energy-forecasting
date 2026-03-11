@@ -110,44 +110,71 @@ Two separate checks run on every prediction:
 
 ## Stack
 
-Python, Pandas, Scikit-learn, FastAPI, Docker, Open-Meteo API, SHAP, dbt + DuckDB, PySpark
+| Layer | Tools |
+|-------|-------|
+| Data & features | Python, Pandas, PySpark |
+| Data pipeline | dbt-duckdb (local DuckDB) |
+| Models | Scikit-learn (KNN, MLP) |
+| Explainability | SHAP |
+| API | FastAPI, Uvicorn |
+| Infrastructure | Docker |
+| Weather data | Open-Meteo API |
 
 ## Architecture
 
 ```
-data/raw/
-  opsd_germany_daily.csv   ← source energy data
-  weather_berlin.csv       ← temperature cache (fetched from Open-Meteo)
+  Raw Data
+  (OPSD energy CSV + Open-Meteo temperature)
         │
         ▼
-┌──────────────────────────────────┐
-│  src/preprocess.py               │  pandas feature engineering
-│  src/train.py                    │  KNN · MLP · baseline → metrics/
-│  src/api.py                      │  FastAPI prediction endpoint
-└──────────────────────────────────┘
+  dbt + DuckDB                    clean, join, validate
+  stg_energy · stg_weather        16 data quality tests
         │
-        ├── src/explain.py          SHAP KernelExplainer → reports/
+        ▼
+  PySpark / pandas                feature engineering
+  lag_1 · lag_7 · rolling_7       day-of-week · month · is_weekend
         │
-        ├── dbt_energy/             dbt-duckdb (local DuckDB, no cloud)
-        │     seeds/                energy.csv · weather.csv
-        │     models/staging/       stg_energy · stg_weather (views)
-        │     models/marts/         fct_energy_features (table)
-        │                           lag_1 · lag_7 · rolling_7 · rolling_7_std
+        ▼
+  KNN · MLP · Baseline            trained on 2006–2016, tested on 2017
         │
-        └── src/spark_features.py   PySpark replication of feature engineering
-                                    → data/processed/spark_features.parquet/
+        ├──▶  SHAP                KernelExplainer → feature importance plots
+        │
+        └──▶  FastAPI             /predict endpoint with plausibility check
+                │
+                ▼
+              Docker              containerised for deployment
 ```
+
+## Data pipeline
+
+The dbt project (`dbt_energy/`) runs entirely on local DuckDB — no cloud required.
+
+**Staging models** (views):
+- `stg_energy` — casts and null-filters the raw OPSD consumption CSV
+- `stg_weather` — casts and null-filters the Open-Meteo temperature CSV
+
+**Mart model** (table):
+- `fct_energy_features` — joins both staging models, then uses DuckDB window
+  functions to add `lag_1`, `lag_7`, a 7-day rolling average, and a 7-day rolling
+  stddev. Rows with any null lag or rolling value are dropped, matching the pandas
+  preprocessing logic exactly.
+
+**Data quality tests** — 16 tests defined in `models/schema.yml`, all passing:
+- `not_null` on every key column across all three models
+- `unique` on every date column
+- `accepted_values` on `day_of_week` (0–6) and `is_weekend` (0–1)
 
 ## SHAP explainability
 
-KNN has no built-in feature importance, so SHAP KernelExplainer is used (model-agnostic).
-Background: 100 random training samples. Explains 50 test-set predictions.
+KNN has no built-in feature importance, so SHAP `KernelExplainer` is used — it
+works model-agnostically by perturbing inputs against a background sample of 100
+training rows and measuring the effect on predictions.
 
-**Summary plot** — feature importance across 50 test predictions:
+**Summary plot** — feature importance ranked across 50 test predictions:
 
 ![SHAP summary](reports/shap_summary.png)
 
-**Waterfall plot** — contribution breakdown for a single prediction:
+**Waterfall plot** — per-feature contribution breakdown for a single prediction:
 
 ![SHAP waterfall](reports/shap_waterfall.png)
 
