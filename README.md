@@ -1,33 +1,32 @@
 # Energy Consumption Forecaster
 
 Forecasting daily electricity consumption for Germany using Open Power System Data.
-Built to practice forecasting methods I used at enercity, where I worked on consumption
-models across a portfolio of several thousand customers.
+I built this to sharpen the forecasting skills I developed at enercity, where I worked
+on consumption models across a portfolio of several thousand industrial customers.
 
 ## What it does
 
-Send a date and recent consumption values, and the API returns a predicted consumption
-in GWh. It fetches live temperature from Open-Meteo and checks German public holidays
-automatically.
+Send a date and recent consumption values — the API returns a predicted consumption
+in GWh. Temperature is fetched live from Open-Meteo, and German public holidays are
+checked automatically.
 
-Also includes an automated plausibility check. At enercity we had to manually review
-hundreds of customer model predictions every day. This automates that check and only
-flags the ones that look suspicious.
+Every prediction also runs a plausibility check. At enercity we reviewed hundreds of
+customer model outputs daily by hand. This automates that process and only surfaces
+the ones worth looking at.
 
 ## Dataset
 
-Open Power System Data, daily electricity consumption for Germany 2012-2017.
+Open Power System Data — daily electricity consumption for Germany, 2012–2017.
 Source: https://open-power-system-data.org
 
 ## Models
 
 Three models compared on 2017 holdout data (365 days):
 
-1. **Day-of-week baseline** - weighted average of the last 5 same weekday + same month
-   values. More recent weeks get higher weight. This is the standard baseline approach
-   in operational energy forecasting.
-2. **KNN** - k-nearest neighbours using time, lag and weather features.
-3. **MLP** - simple two-layer neural network with the same features as KNN.
+1. **Day-of-week baseline** — weighted average of the last 5 same-weekday, same-month
+   values. More recent weeks weighted higher. Standard baseline in operational forecasting.
+2. **KNN** — k-nearest neighbours on time, lag and weather features.
+3. **MLP** — two-layer neural network with the same feature set.
 
 ## Results
 
@@ -37,42 +36,51 @@ Three models compared on 2017 holdout data (365 days):
 | KNN | 25 GWh | 35 GWh | 0.02s | 0.006s |
 | MLP | 20 GWh | 32 GWh | 1.85s | ~0s |
 
-KNN is used in the API. Fast to train, near instant inference, and only slightly
-behind MLP on accuracy. Adding temperature and holiday features improved MAE from
-29 to 25 compared to using time and lag features only.
+KNN runs in the API — fast to train, near-instant inference, and only slightly behind
+MLP on accuracy. Adding temperature and holiday features dropped MAE from 29 to 25
+compared to time and lag features alone.
 
-## Features used
+## Model Explainability
 
-- Day of week, month, is_weekend
-- is_holiday (German public holidays)
-- temperature (fetched from Open-Meteo API)
-- lag_1 - yesterday's consumption
-- lag_7 - same day last week
-- rolling_7 - 7-day rolling average
+SHAP and LIME explain individual predictions (`src/explain.py`):
+
+- SHAP KernelExplainer — global feature importance and per-prediction waterfall plots
+- LIME — local surrogate explanations as a cross-check
+
+### SHAP Summary Plot
+![SHAP Summary](reports/shap_summary.png)
+
+### SHAP Waterfall Plot
+![SHAP Waterfall](reports/shap_waterfall.png)
+
+### LIME Explanation
+![LIME](reports/lime_explanation.png)
 
 ## Data Pipeline
 
 Built with dbt on DuckDB for local development:
 
-- `stg_energy` - staging view for raw consumption data
-- `stg_weather` - staging view for weather data
-- `fct_energy_features` - mart table with all engineered features
+- `stg_energy` — staging view for raw consumption data
+- `stg_weather` — staging view for weather data
+- `fct_energy_features` — mart table with all engineered features
 - 16 data quality tests covering nulls, uniqueness and accepted values
 
 Feature engineering is also implemented in PySpark (`src/spark_features.py`) to
-support larger datasets and demonstrate production-scale pipeline patterns.
+handle larger datasets and mirror production pipeline patterns.
 
-## Model Explainability
+## Features used
 
-SHAP and LIME are used to explain individual predictions (`src/explain.py`):
-
-- SHAP KernelExplainer — global feature importance and per-prediction waterfall plots
-- LIME — local surrogate model explanations as cross-check
+- Day of week, month, is_weekend
+- is_holiday (German public holidays)
+- temperature (live from Open-Meteo)
+- lag_1 — yesterday's consumption
+- lag_7 — same day last week
+- rolling_7 — 7-day rolling average
 
 ## API
 
-- `GET /health` - check if service is running
-- `POST /predict` - get predictions and plausibility check
+- `GET /health` — check if the service is running
+- `POST /predict` — get a prediction with plausibility check
 
 ### Request
 ```json
@@ -87,9 +95,9 @@ SHAP and LIME are used to explain individual predictions (`src/explain.py`):
 
 `model` options: `knn`, `mlp`, `baseline`, `all`
 
-`special_event` - set to true if the customer has notified you of unusual consumption
-like a shutdown, production increase or closure. This suppresses the prediction
-plausibility warning, but data pipeline issues are still flagged regardless.
+`special_event` — set to true if the customer flagged unusual consumption (shutdown,
+production surge, closure). Suppresses the prediction warning, but input checks
+still run regardless.
 
 ### Response
 ```json
@@ -116,13 +124,13 @@ plausibility warning, but data pipeline issues are still flagged regardless.
 
 ## Plausibility check
 
-Two separate checks run on every prediction:
+Two checks run on every prediction:
 
-1. **Input check** - flags if lag_1 deviates more than 50% from the historical mean
-   for that weekday and month. This usually means something is wrong in the data
-   pipeline. Always runs, cannot be suppressed.
-2. **Prediction check** - flags if the prediction deviates more than 20% from recent
-   same-weekday historical values. Suppressed if special_event is true.
+1. **Input check** — flags if lag_1 deviates more than 50% from the historical mean
+   for that weekday and month. Usually signals a data pipeline issue. Always runs,
+   cannot be suppressed.
+2. **Prediction check** — flags if the output deviates more than 20% from recent
+   same-weekday values. Suppressed if special_event is true.
 
 ## How to run
 
@@ -156,7 +164,6 @@ Python · Scikit-learn · PySpark · dbt · DuckDB · FastAPI · Docker · SHAP 
 
 ## Next steps
 
-- LLM email parser to extract special event details from customer notifications
-  and automatically set the special_event flag
+- LLM email parser to extract special event flags from customer notifications automatically
 - Streamlit dashboard for visualising predictions and plausibility flags
 - GitHub Actions for automated testing
