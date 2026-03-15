@@ -1,20 +1,25 @@
 {
+  "data_range": "2006-01-01 to 2026-03-13",
+  "total_rows": 4376,
+  "train_rows": 4011,
+  "test_rows": 365,
+  "smard_data_used": true,
   "baseline": {
     "MAE": 47.83,
     "RMSE": 78.15,
     "train_time_sec": 0,
-    "inference_time_sec": 0.092
+    "inference_time_sec": 0.089
   },
   "knn": {
     "MAE": 24.04,
     "RMSE": 32.99,
-    "train_time_sec": 0.002,
-    "inference_time_sec": 0.003
+    "train_time_sec": 0.001,
+    "inference_time_sec": 0.004
   },
   "mlp": {
     "MAE": 20.85,
     "RMSE": 30.62,
-    "train_time_sec": 2.321,
+    "train_time_sec": 2.314,
     "inference_time_sec": 0.0
   }
 }
