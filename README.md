@@ -43,20 +43,9 @@ slightly behind MLP on accuracy.
 | 2024 | 1,086 GWh | 1,073 GWh | +1.2% | 2.5°C |
 | 2025 | 1,083 GWh | 1,160 GWh | -6.6% | -7.1°C |
 
-The model handles normal-temperature holidays well (under 3% error for 2023 and 2024).
-The 2025 miss is an edge case: at -7.1°C, heating demand pushed consumption ~80 GWh
-above what the model expects for a holiday. Extreme cold holidays are rare in the
-training data, so the model defaults to its learned "holiday = low" pattern.
-
-I added `holiday_temp` and `weekend_temp` interaction features to help with this.
-They improve the signal but don't fully solve it. The core issue is that KNN finds
-nearest neighbors by distance across all features, and the handful of very cold
-holidays in the dataset get outvoted by the many mild ones.
-
-The plausibility checker also flags valid holiday predictions as suspicious, because
-its expected range is based on all December days of the same weekday (including normal
-working days). Holidays will always fall below that range. A holiday-aware plausibility
-threshold would fix this.
+Under 3% error on 2023 and 2024. The 2025 miss (-6.6%) is a cold-weather edge case: at -7.1°C, heating demand pushed actual consumption ~80 GWh above the model's holiday baseline. 
+I added holiday_temp and weekend_temp interaction features, which help but don't fully solve it since cold holidays are rare in the training data and get outvoted by mild ones in KNN.
+The plausibility checker also flags valid holiday predictions because its expected range includes normal working days. A holiday-aware threshold would fix this.
 
 ## LangChain agent
 
