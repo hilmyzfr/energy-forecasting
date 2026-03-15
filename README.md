@@ -1,30 +1,30 @@
 # Energy Consumption Forecaster
 
-Forecasting daily electricity consumption for Germany using machine learning.
-Built to practice forecasting methods I used at enercity, where I worked on consumption
-models across a portfolio of several thousand customers.
+Forecasts daily electricity consumption for Germany. I built this to practice
+the forecasting methods I used at enercity, where I worked on consumption models
+across a portfolio of several thousand customers.
 
 ## What it does
 
-- **Predict** daily electricity consumption via a FastAPI endpoint
-- **Auto-fetch** live grid data from SMARD (Bundesnetzagentur) and weather from Open-Meteo
-- **Chat** with the forecaster in natural language using a LangChain agent
-- **Explain** predictions with SHAP and LIME (model-agnostic XAI)
-- **Flag** suspicious predictions with automated plausibility checks
+- Predicts daily consumption via a FastAPI endpoint
+- Pulls live grid data from SMARD (Bundesnetzagentur) and weather from Open-Meteo
+- Lets you query the forecaster in natural language through a LangChain agent
+- Explains individual predictions with SHAP and LIME
+- Flags suspicious predictions with automated plausibility checks
 
 ## Data
 
-Training combines two sources automatically — no manual download needed:
+Training combines two sources automatically, no manual download needed:
 
-- **OPSD** — daily consumption 2006–2017 ([open-power-system-data.org](https://open-power-system-data.org))
-- **SMARD** — live daily grid load 2018–present, streamed via API ([smard.de](https://www.smard.de))
+- **OPSD**: daily consumption 2006-2017 ([open-power-system-data.org](https://open-power-system-data.org))
+- **SMARD**: live daily grid load from 2018 onward, fetched via API ([smard.de](https://www.smard.de))
 
-Running `python3 src/train.py` fetches the latest SMARD data, merges it with OPSD,
+Running `python3 src/train.py` pulls the latest SMARD data, merges it with OPSD,
 and trains on ~7,300+ rows.
 
 ## Models
 
-Trained on 2006–2024, tested on 2025:
+Trained on 2006-2024, tested on 2025:
 
 | Model | MAE | RMSE |
 | --- | --- | --- |
@@ -32,77 +32,122 @@ Trained on 2006–2024, tested on 2025:
 | KNN | 24 GWh | 33 GWh |
 | MLP | 21 GWh | 31 GWh |
 
-KNN is the production model — fast to train, near instant inference, and close to MLP accuracy.
+KNN is the production model. Fast to train, near-instant inference, and only
+slightly behind MLP on accuracy.
 
 ### Christmas Day validation (vs actual SMARD data)
 
 | Year | Predicted | Actual | Error | Temp |
 | --- | --- | --- | --- | --- |
-| 2023 | 1,073 GWh | 1,077 GWh | -0.4% | 9.3°C |
-| 2024 | 1,071 GWh | 1,073 GWh | -0.2% | 2.5°C |
-| 2025 | 1,072 GWh | 1,160 GWh | -7.6% | -7.1°C |
+| 2023 | 1,046 GWh | 1,077 GWh | -2.9% | 9.3°C |
+| 2024 | 1,086 GWh | 1,073 GWh | +1.2% | 2.5°C |
+| 2025 | 1,083 GWh | 1,160 GWh | -6.6% | -7.1°C |
 
-The 2025 error was caused by the model ignoring temperature on holidays — it learned
-"holiday = low" regardless of weather. Adding `holiday_temp` and `weekend_temp`
-interaction features fixes this: cold holidays now correctly predict higher consumption.
+The model handles normal-temperature holidays well (under 3% error for 2023 and 2024).
+The 2025 miss is an edge case: at -7.1°C, heating demand pushed consumption ~80 GWh
+above what the model expects for a holiday. Extreme cold holidays are rare in the
+training data, so the model defaults to its learned "holiday = low" pattern.
+
+I added `holiday_temp` and `weekend_temp` interaction features to help with this.
+They improve the signal but don't fully solve it. The core issue is that KNN finds
+nearest neighbors by distance across all features, and the handful of very cold
+holidays in the dataset get outvoted by the many mild ones.
+
+The plausibility checker also flags valid holiday predictions as suspicious, because
+its expected range is based on all December days of the same weekday (including normal
+working days). Holidays will always fall below that range. A holiday-aware plausibility
+threshold would fix this.
 
 ## LangChain agent
 
-A conversational layer over the API. Ask in natural language instead of crafting JSON:
+The API expects structured JSON. The LangChain agent sits on top and handles
+the translation: you ask a question in plain English, it figures out what to
+call, pulls live data from SMARD, hits the API, and explains the result.
+
+It uses a ReAct agent (LangGraph) with three tools:
+
+- `get_energy_forecast`: calls `/predict` with auto-fetched SMARD lag values
+- `compare_models`: runs KNN, MLP, and baseline side by side
+- `check_api_health`: pings the API
+
+Example interactions:
 
 ```
 You: What's the forecast for next Friday?
 
-Agent: Predicted consumption is 1,387 GWh (KNN). Using live SMARD data —
-       yesterday's actual consumption was 1,352 GWh. Plausibility check passed.
+Agent: Predicted consumption for Friday March 21 is 1,387 GWh (KNN model).
+       I pulled yesterday's actual grid load from SMARD (1,352 GWh) and
+       last week's (1,389 GWh) to use as inputs. Temperature forecast is
+       7.2°C, not a holiday. Plausibility check passed.
 ```
 
-The agent fetches real-time lag values from SMARD automatically, so predictions
-use actual current grid data.
+```
+You: Compare all models for Christmas 2025
 
-## Explainability (XAI)
+Agent: Here are the predictions for December 25, 2025:
+       - KNN: 1,083 GWh
+       - MLP: 1,091 GWh
+       - Baseline: 1,156 GWh
+       Temperature was -7.1°C (official holiday). The baseline predicts
+       highest because it weights recent same-weekday values. KNN and MLP
+       both predict lower, relying more on the holiday flag. Actual
+       consumption was 1,160 GWh, so the baseline was closest here.
+```
 
-SHAP and LIME explanations for the KNN model (`src/explain.py`), answering
-*why* the model predicts what it does.
+```
+You: Yesterday's consumption was 1500 GWh, is that normal for a Tuesday in March?
 
-**SHAP beeswarm** — global feature importance across test predictions:
+Agent: That's about 11% above the historical average for March Tuesdays
+       (~1,350 GWh). Not extreme enough to flag a data issue, but worth
+       checking. Could be a cold snap driving heating demand, or an
+       industrial event. Want me to run a forecast using that value?
+```
+
+The agent runs on Claude (Anthropic) via `langchain-anthropic`. You can swap
+to OpenAI or a local model by changing the LLM initialization in `agent.py`.
+
+## Explainability
+
+SHAP and LIME explanations for the KNN model, generated by `src/explain.py`.
+
+**SHAP beeswarm** (global feature importance across test predictions):
 
 ![SHAP summary](reports/shap_summary.png)
 
-Weekend/weekday status and lag features have the strongest impact. Holidays are rare
-but cause the largest single-prediction swings.
+Weekend/weekday status and lag features have the most impact. Holidays are rare
+but cause the largest swings on individual predictions.
 
-**SHAP waterfall** — breakdown of a single holiday prediction (New Year's Day):
+**SHAP waterfall** (single prediction breakdown for New Year's Day):
 
 ![SHAP waterfall](reports/shap_waterfall.png)
 
-Starting from the average prediction of 1,334 GWh, the holiday flag alone pushes it
-down by 172 GWh. Weekend status and low lag values pull it further to a final
-prediction of 1,053 GWh.
+Starting from the average prediction of 1,334 GWh, the holiday flag alone pulls
+it down by 172 GWh. Weekend status and low lag values bring the final prediction
+to 1,053 GWh.
 
-**LIME** — local surrogate explanation for the same prediction:
+**LIME** (local surrogate for the same prediction):
 
 ![LIME explanation](reports/lime_explanation.png)
 
-Confirms the same story from a different method: holiday and weekend flags dominate,
-with temperature being the only feature pushing consumption up (cold weather = more heating).
+Same conclusion from a different method. Holiday and weekend flags dominate.
+Temperature is the only feature pushing consumption up (cold = more heating).
 
 ```bash
 python3 src/explain.py
-# Outputs → reports/shap_summary.png, reports/shap_waterfall.png, reports/lime_explanation.png
+# outputs: reports/shap_summary.png, reports/shap_waterfall.png, reports/lime_explanation.png
 ```
 
 ## How to run
 
 ```bash
-# Train (auto-fetches latest SMARD data)
+# train (auto-fetches latest SMARD data)
 pip install -r requirements.txt
 python3 src/train.py
 
-# Start API
+# start API
 uvicorn src.api:app --reload
 
-# Start LangChain agent (separate terminal)
+# start LangChain agent (separate terminal)
 pip install -r langchain_agent/requirements-langchain.txt
 export ANTHROPIC_API_KEY=sk-ant-...
 cd langchain_agent && python3 agent.py
@@ -110,11 +155,12 @@ cd langchain_agent && python3 agent.py
 
 ## Stack
 
-Python, Pandas, Scikit-learn, FastAPI, SHAP, LIME, LangChain, LangGraph, Streamlit,
-Open-Meteo API, SMARD API, Docker
+Python, Pandas, Scikit-learn, FastAPI, SHAP, LIME, LangChain, LangGraph,
+Streamlit, Open-Meteo API, SMARD API, Docker
 
 ## Next steps
 
-- LLM email parser to auto-extract special events from customer notifications
-- RAG over energy documentation for contextual Q&A
+- Holiday-aware plausibility thresholds (current checker flags valid holiday predictions)
+- Email parser (LLM) to extract special events from customer notifications
+- RAG over energy docs for contextual Q&A
 - Drift monitoring and automated retraining via GitHub Actions
