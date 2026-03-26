@@ -1,8 +1,14 @@
-# Energy Consumption Forecaster
+# # Energy Consumption Forecaster
 
-Forecasts daily electricity consumption for Germany. I built this to practice
-the forecasting methods I used at enercity, where I worked on consumption models
-across a portfolio of several thousand customers.
+Forecasts daily electricity consumption for Germany. The pipeline fetches live grid load from SMARD (Bundesnetzagentur) and weather data from Open-Meteo, then builds features from lags, holidays, calendar effects, and temperature interactions. KNN and MLP models train on over 7,300 days of historical data and serve predictions through a FastAPI endpoint. Each prediction includes SHAP and LIME explanations. A plausibility module flags statistical outliers.
+
+A LangChain/LangGraph agent (ReAct architecture) sits on top of the API and handles natural-language access. Instead of constructing JSON requests, users ask questions in English. The agent fetches current SMARD data, selects the appropriate endpoint, runs model comparisons where relevant, and returns an explained result. It runs on Claude but the LLM backend is swappable.
+
+The forecasting methodology comes from my professional experience building consumption models for a diverse customer portfolio spanning industrial, commercial, public sector, and data center clients. The pipeline automation, explainability layer, and LangChain agent are additions I built for this project.
+
+```
+SMARD + Open-Meteo > feature engineering > KNN / MLP > FastAPI > plausibility check > LangChain agent > SHAP / LIME
+```
 
 ## What it does
 
