@@ -1,6 +1,5 @@
 import sqlite3
 import os
-from datetime import date
 from src.agent.parser import ParsedEvent
 
 DB_PATH = os.getenv("EVENT_DB_PATH", "data/events.db")
@@ -13,22 +12,34 @@ def init_db():
     con = get_connection()
     con.execute("""
         CREATE TABLE IF NOT EXISTS events (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            customer_id TEXT NOT NULL,
-            event_type  TEXT,
-            start_date  TEXT,
-            end_date    TEXT,
-            confidence  REAL,
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_id   TEXT NOT NULL,
+            event_type    TEXT,
+            start_date    TEXT,
+            end_date      TEXT,
+            confidence    REAL,
             special_event INTEGER,
-            notes       TEXT,
-            created_at  TEXT DEFAULT (date('now'))
+            notes         TEXT,
+            created_at    TEXT DEFAULT (date('now'))
         )
     """)
     con.commit()
     con.close()
 
-def save_event(customer_id: str, event: ParsedEvent):
+def save_event(customer_id: str, event: ParsedEvent) -> bool:
+    """Save event only if same customer + event_type + start_date doesn't exist."""
     con = get_connection()
+    existing = con.execute("""
+        SELECT id FROM events
+        WHERE customer_id = ?
+          AND event_type = ?
+          AND start_date = ?
+    """, (customer_id, event.event_type, event.start_date)).fetchone()
+
+    if existing:
+        con.close()
+        return False  # duplicate, skip
+
     con.execute("""
         INSERT INTO events
             (customer_id, event_type, start_date, end_date, confidence, special_event, notes)
@@ -44,6 +55,7 @@ def save_event(customer_id: str, event: ParsedEvent):
     ))
     con.commit()
     con.close()
+    return True  # saved
 
 def get_recent_events(customer_id: str, limit: int = 5) -> list[dict]:
     con = get_connection()
