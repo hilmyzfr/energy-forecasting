@@ -114,6 +114,7 @@ It uses a ReAct agent (LangGraph) with three tools:
 
 Example interactions:
 You: Yesterday's consumption was 1500 GWh, is that normal for a Tuesday in March?
+
 Agent: That's about 11% above the historical average for March Tuesdays
 (~1,350 GWh). Not extreme enough to flag a data issue, but worth
 checking. Could be a cold snap driving heating demand, or an
