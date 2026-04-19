@@ -51,7 +51,8 @@ Under 3% error on 2023 and 2024. The 2025 miss (-6.6%) is a cold-weather edge ca
 
 I worked with consumption models across a large industrial customer portfolio. When customers notified us of unusual events, planned shutdowns, production increases, factory closures, someone had to manually read the email, interpret it, and adjust the forecast flag. At scale this meant reviewing hundreds of models daily.
 
-After upskilling in generative AI, I built an agentic pipeline to automate this. It consists of three modules that mirror the Microsoft Power Platform stack:
+I built an agentic pipeline to automate this. It consists of three modules that mirror the Microsoft Power Platform stack:
+
 Customer email
 |
 [Parser Agent]        -> extracts event type, dates, confidence
